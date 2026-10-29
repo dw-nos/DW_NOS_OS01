@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>참여 신청·문의 관리</title>
+<style>
+:root{--navy:#123a5a;--blue:#176b87;--ink:#203244;--muted:#617386;--line:#dce6ec}
+*{box-sizing:border-box}
+body{margin:0;background:#f7fafc;color:var(--ink);font-family:Arial,"Noto Sans KR","Malgun Gothic",sans-serif;line-height:1.6}
+.wrap{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:30px 0 50px}
+.kicker{font-size:12px;letter-spacing:1.4px;color:var(--blue);font-weight:900}
+h1{font-size:28px;letter-spacing:-.7px;color:var(--navy);margin:4px 0 6px}
+.sub{color:var(--muted);font-size:14px;margin:0}
+.warn{background:#fff8e9;border:1px solid #f4dfb4;color:#74541d;border-radius:12px;padding:11px 15px;font-size:13px;margin:16px 0}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:10px 16px;font-weight:750}
+.primary{background:var(--blue);color:#fff}
+.outline{background:#fff;border:1px solid var(--line);color:var(--navy)}
+button:disabled{opacity:.6;cursor:default}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:15px;background:#fff}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
+th,td{padding:11px 12px;border-bottom:1px solid #e7eef2;text-align:left;vertical-align:top}
+th{background:#f0f6f8;color:var(--navy);white-space:nowrap}
+td.long{white-space:pre-wrap;min-width:260px;max-width:480px;word-break:break-word}
+td.nw{white-space:nowrap}
+.empty{text-align:center;padding:30px;color:var(--muted);display:none}
+#msg{font-size:13px;margin:10px 0;color:#8a2b2b}
+</style></head>
+<body><div class="wrap">
+<div class="kicker">INTERNAL USE</div>
+<h1>참여 신청·문의 관리</h1>
+<p class="sub">구글 시트에 저장된 접수 내역을 최신순으로 보여줍니다.</p>
+<div class="warn">담당자 전용 화면입니다. 성명·연락처 등 개인정보가 표시되므로 화면 주소를 공유하지 마시고, 내려받은 파일은 승인된 방식으로 보관해 주세요.</div>
+<div class="tools">
+  <button class="primary" id="tabApp">참여 신청 (<span id="cntApp">0</span>)</button>
+  <button class="outline" id="tabInq">문의 (<span id="cntInq">0</span>)</button>
+  <button class="outline" id="reload">새로고침</button>
+  <button class="primary" id="csv" style="margin-left:auto">현재 목록 CSV 다운로드</button>
+</div>
+<div id="msg" role="alert"></div>
+<div class="tablewrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table><div class="empty" id="empty">접수된 내역이 없습니다.</div></div>
+<script>
+const $=id=>document.getElementById(id);
+let data=null, current="app";
+
+function setMsg(t){$("msg").textContent=t||""}
+function view(){
+  if(!data)return;
+  const set=current==="app"?data.applications:data.inquiries;
+  $("cntApp").textContent=data.applications.rows.length;
+  $("cntInq").textContent=data.inquiries.rows.length;
+  $("tabApp").className=current==="app"?"primary":"outline";
+  $("tabInq").className=current==="inq"?"primary":"outline";
+  const thead=$("thead"), tbody=$("tbody");
+  thead.textContent="";tbody.textContent="";
+  const trh=document.createElement("tr");
+  set.headers.forEach(h=>{const th=document.createElement("th");th.textContent=h;trh.appendChild(th)});
+  thead.appendChild(trh);
+  set.rows.forEach(r=>{
+    const tr=document.createElement("tr");
+    r.forEach((v,i)=>{
+      const td=document.createElement("td");
+      td.textContent=v;
+      td.className=(set.headers[i]==="문의 내용")?"long":"nw";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  $("empty").style.display=set.rows.length?"none":"block";
+}
+
+function load(){
+  setMsg("");$("reload").disabled=true;
+  google.script.run
+    .withSuccessHandler(r=>{
+      $("reload").disabled=false;
+      if(!r||!r.ok){setMsg((r&&r.message)||"불러오지 못했습니다.");return}
+      data=r;view();
+    })
+    .withFailureHandler(()=>{$("reload").disabled=false;setMsg("불러오지 못했습니다. 잠시 후 새로고침해 주세요.")})
+    .getAdminData();
+}
+
+// 엑셀에서 열 때 수식으로 실행되지 않도록 =,+,-,@ 로 시작하는 값 앞에 ' 를 붙인다.
+function csvCell(v){
+  let s=String(v==null?"":v);
+  if(/^[=+\-@]/.test(s))s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+}
+function downloadCsv(){
+  if(!data){return}
+  const set=current==="app"?data.applications:data.inquiries;
+  if(!set.rows.length){setMsg("다운로드할 내역이 없습니다.");return}
+  const rows=[set.headers].concat(set.rows);
+  const csv=rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
+  const url=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"}));
+  const a=document.createElement("a");
+  a.href=url;a.download=(current==="app"?"참여신청내역":"문의내역")+".csv";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  setMsg("");
+}
+
+$("tabApp").onclick=()=>{current="app";view()};
+$("tabInq").onclick=()=>{current="inq";view()};
+$("reload").onclick=load;
+$("csv").onclick=downloadCsv;
+load();
+</script>
+</div></body></html>
