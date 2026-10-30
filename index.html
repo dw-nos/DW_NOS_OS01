@@ -38,8 +38,11 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
 (function () {
   "use strict";
 
-  // Google Apps Script 웹 앱 URL (Code.gs 배포 주소)
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyGf8C3k4qMraFixjOOqaf4keySRya4E4nLkI_h6guvZxn_NlJhvgzlKiCeNvqYtQOs6w/exec";
+  // Google Apps Script 웹 앱 URL
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyL53Wwui2mIXpOwRgj-fes8Hu7RdIz5CE8gBAsxgoGBurM9xoDZy4ptOt0VLHEoWAAMg/exec";
+
+  const MSG_SUCCESS = "임상연구 참여 신청이 완료되었습니다.";
+  const MSG_DUPLICATE = "이미 신청된 연락처입니다.";
 
   const $ = (id) => document.getElementById(id);
 
@@ -60,21 +63,59 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
 
   $("iqBody").addEventListener("input", (e) => { $("iqCount").textContent = e.target.value.length; });
 
+  /* ── 서버 응답 해석 ──
+     kind: success | duplicate | unreadable(응답을 못 읽음) | error | offline | timeout | server_page */
+  function classify(data) {
+    if (!data || typeof data !== "object") return { kind: "unreadable" };
+    const raw = data.result != null ? data.result : (data.status != null ? data.status : (data.code != null ? data.code : ""));
+    const flag = String(raw).toLowerCase();
+
+    if (flag === "duplicate" || data.duplicate === true) return { kind: "duplicate" };
+    if (flag === "success" || data.ok === true || data.success === true) return { kind: "success" };
+
+    const failed = data.ok === false || data.success === false || !!data.error ||
+      ["error", "fail", "failed", "invalid"].indexOf(flag) >= 0;
+    if (failed) return { kind: "error", message: String(data.message || data.error || "") };
+
+    return { kind: "unreadable" };                      // {} 처럼 의미를 알 수 없는 응답
+  }
+
   /* ── 전송 ──
      Apps Script 웹 앱은 CORS 사전 요청(OPTIONS)에 응답하지 않으므로, 본문은 JSON 문자열 그대로 두고
      Content-Type 만 text/plain 으로 보내 '단순 요청'으로 처리되게 한다. (서버가 JSON.parse 로 읽음) */
   async function postToSheet(payload) {
+    if (navigator.onLine === false) return { kind: "offline" };
+
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const res = await fetch(WEB_APP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-        redirect: "follow",
-        signal: ctrl.signal,
-      });
-      return await res.json();
+      let res;
+      try {
+        res = await fetch(WEB_APP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+          redirect: "follow",
+          signal: ctrl.signal,
+        });
+      } catch (err) {
+        if (err && err.name === "AbortError") return { kind: "timeout" };
+        // 요청은 이미 서버로 나갔지만 브라우저 보안 정책(CORS·Opaque 응답 등)으로 응답을 읽지 못한 경우
+        return { kind: "unreadable" };
+      }
+
+      let text = "";
+      try { text = await res.text(); } catch (err) { return { kind: "unreadable" }; }
+      const body = text.trim();
+      if (!body) return { kind: "unreadable" };
+
+      let data = null;
+      try { data = JSON.parse(body); } catch (err) { /* JSON 이 아닌 응답 */ }
+      if (data) return classify(data);
+
+      if (body.charAt(0) === "<") return { kind: "server_page" };   // 로그인·오류 HTML 화면: 접수된 것이 아님
+      if (body.toLowerCase().indexOf("duplicate") >= 0) return { kind: "duplicate" };
+      return { kind: "unreadable" };
     } finally {
       clearTimeout(timer);
     }
@@ -94,28 +135,31 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
       btn.disabled = true;
       btn.textContent = "전송 중...";
 
-      let result = null;
-      let failMsg = "";
-      try {
-        result = await postToSheet(opt.build());
-      } catch (err) {
-        failMsg = err && err.name === "AbortError"
-          ? "응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
-          : "서버 응답을 확인하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.";
-      }
+      const r = await postToSheet(opt.build());
 
       btn.disabled = false;
       btn.textContent = label;
 
-      if (result && result.ok) {
+      if (r.kind === "duplicate") {
+        alert(opt.duplicateText || opt.successText);  // 입력값은 그대로 둔다(연락처를 고쳐 다시 제출할 수 있도록)
+        return;
+      }
+      if (r.kind === "success" || r.kind === "unreadable") {
+        // 응답을 못 읽는 경우도 전송은 된 것으로 보고 완료 안내
         form.reset();
         if (opt.afterReset) opt.afterReset();
         alert(opt.successText);
-      } else {
-        errBox.textContent = failMsg || (result && result.message) || "전송에 실패했습니다. 잠시 후 다시 시도해 주세요.";
-        errBox.style.display = "block";
-        errBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
       }
+
+      const messages = {
+        offline: "인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
+        timeout: "응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
+        server_page: "접수 서버 설정에 문제가 있습니다. 잠시 후 다시 시도하거나 담당자에게 문의해 주세요.",
+      };
+      errBox.textContent = messages[r.kind] || r.message || "전송에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+      errBox.style.display = "block";
+      errBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
 
@@ -123,7 +167,8 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
   bindForm("applicationForm", {
     errorId: "errorMsg",
     consentId: "privacyConsent",
-    successText: "임상연구 참여 신청이 완료되었습니다.",
+    successText: MSG_SUCCESS,
+    duplicateText: MSG_DUPLICATE,
     build: () => ({
       type: "application",
       institution: $("institution").value.trim(),
