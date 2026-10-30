@@ -19,7 +19,7 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
 <div class="form-layout" style="margin-top:22px"><aside class="intro"><h3>신청 전 확인해 주세요</h3><p>신청 정보는 연구진이 참여 신청을 확인하고 관련 안내를 드리는 목적으로 사용됩니다.</p><div class="mini"><b>연구책임자</b><br>전북대학교병원 이비인후과 김종승 교수<br><br><b>의뢰자</b><br>㈜대웅제약<br><br><b>계획서 번호</b><br>DW_NOS_OS01</div></aside>
 <form id="applicationForm"><div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div><p class="formtitle">신청자 정보</p><p class="desc">* 표시는 필수 입력 항목입니다.</p>
 <div class="field"><label for="name">성명 <span class="req">*</span></label><input id="name" name="name" type="text" required maxlength="50" autocomplete="name" placeholder="성명을 입력해 주세요"></div>
-<div class="field"><label for="birth">생년월일 <span class="req">*</span></label><input id="birth" name="birth" type="date" min="1900-01-01" aria-describedby="birthHint"><div class="hint" id="birthHint">예: 1999-01-01 · 입력창을 누르면 달력이 열립니다.</div><div class="hint" style="margin-top:4px">⚠️ 임상시험 대상자 식별을 위해 주민등록상 생년월일을 정확하게 입력해 주세요.</div></div>
+<div class="field"><label for="birth">생년월일 <span class="req">*</span></label><input id="birth" name="birth" type="date" min="1900-01-01" aria-describedby="birthHint"><div class="hint" id="birthHint">예: 1999-01-01 · 입력창을 누르면 달력이 열립니다. · 만 19세 이상(2026년 12월 1일 기준)만 신청 가능합니다.</div><div class="hint" style="margin-top:4px">⚠️ 임상시험 대상자 식별을 위해 주민등록상 생년월일을 정확하게 입력해 주세요.</div></div>
 <div class="field"><label for="institution">소속 기관 <span class="req">*</span></label><input id="institution" name="institution" type="text" required maxlength="100" placeholder="예: ○○병원 / ○○약국"></div>
 <div class="field"><label for="bizno">소속 기관 사업자등록번호 <span class="req">*</span></label><input id="bizno" name="bizno" type="text" inputmode="numeric" required maxlength="12" placeholder="예: 123-45-67890"><div class="hint">기관 확인을 위한 정보입니다.</div></div>
 <div class="field"><label for="phone">연락처 <span class="req">*</span></label><input id="phone" name="phone" type="tel" required maxlength="20" autocomplete="tel" placeholder="예: 010-1234-5678"></div>
@@ -41,6 +41,12 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
 
   // Google Apps Script 웹 앱 URL
   const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyL53Wwui2mIXpOwRgj-fes8Hu7RdIz5CE8gBAsxgoGBurM9xoDZy4ptOt0VLHEoWAAMg/exec";
+
+  // 연령 기준: 기준일(2026-12-01) 현재 만 19세 이상만 신청 가능 (기준일을 바꾸려면 아래 두 값만 수정)
+  const AGE_REF_DATE = "2026-12-01";   // yyyy-mm-dd
+  const MIN_AGE = 19;
+  // 기준일에 만 19세가 되는 가장 늦은 생년월일 = 2007-12-01 (이 날짜 이전/당일 출생자만 가능)
+  const LATEST_BIRTH = (parseInt(AGE_REF_DATE.slice(0, 4), 10) - MIN_AGE) + AGE_REF_DATE.slice(4);
 
   const MSG_SUCCESS = "임상연구 참여 신청이 완료되었습니다.";
   const MSG_DUPLICATE = "이미 신청된 연락처입니다.";
@@ -177,6 +183,7 @@ textarea{width:100%;border:1px solid #cbd9e1;border-radius:10px;padding:12px 13p
       if (!b) { $("birth").focus(); return "생년월일을 입력해 주세요."; }
       const t = new Date(); const today = t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
       if (b > today) { $("birth").focus(); return "생년월일이 올바르지 않습니다. 다시 확인해 주세요."; }
+      if (b > LATEST_BIRTH) { $("birth").focus(); return "만 19세 이상 성인만 신청할 수 있습니다. (2026년 12월 1일 기준)"; }
       return "";
     },
     successText: MSG_SUCCESS,
