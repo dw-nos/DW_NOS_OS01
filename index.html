@@ -39,7 +39,7 @@ label.radio input[type=radio]:focus-visible{outline:3px solid #2788a055;outline-
 <div class="field"><label for="bizno">소속 기관 사업자등록번호 <span class="req">*</span></label><input id="bizno" name="bizno" type="text" inputmode="numeric" required maxlength="12" placeholder="예: 123-45-67890"><div class="hint">기관 확인을 위한 정보입니다.</div></div>
 <div class="field"><label id="mrLabel" for="mrName">영업 담당자 정보(선택)</label>
 <div class="radio-row" role="radiogroup" aria-labelledby="mrLabel"><label class="radio"><input type="radio" name="mrType" id="mrEtc" value="etc"><span>ETC</span></label><label class="radio"><input type="radio" name="mrType" id="mrCh" value="ch"><span>CH</span></label><button type="button" class="linkbtn" id="mrClear" hidden>선택 해제</button></div>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><input type="text" id="mrDivision" name="mrDivision" maxlength="50" autocomplete="off" placeholder="사업부" aria-label="사업부"><input type="text" id="mrOffice" name="mrOffice" maxlength="50" autocomplete="off" placeholder="사무소" aria-label="사무소"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><select id="mrDivision" name="mrDivision" aria-label="사업부"><option value="">사업부 선택</option><option>서울3</option><option>서울4</option><option>지방3</option><option>지방4</option></select><select id="mrOffice" name="mrOffice" aria-label="사무소" disabled><option value="">사무소 선택</option></select></div>
 <input type="text" id="mrName" name="mrName" maxlength="50" autocomplete="off" placeholder="담당자 이름을 입력해 주세요" style="margin-top:10px"></div>
 <div class="consent"><div style="font-weight:850;color:var(--navy);margin-bottom:10px">🔒 개인정보 수집·이용 동의</div><div class="consentbody"><p><b>1. 수집 항목</b><br>성명, 소속 기관, 소속 기관 사업자등록번호, 연락처, 성별</p><p><b>2. 수집·이용 목적</b><br>연구 참여 신청 접수, 참여 자격 및 소속 확인, 연구 관련 안내</p><p><b>3. 보유 및 이용 기간</b><br>연구 참여 철회 시 개인정보를 즉시 파기합니다. 연구 참여자로 등록된 경우 관련 법령 및 승인된 연구계획에 따른 보존기간까지 보유합니다.</p><p><b>4. 동의 거부 권리</b><br>개인정보 수집·이용 동의를 거부할 수 있습니다. 다만 필수 항목에 동의하지 않을 경우 참여 신청이 제한될 수 있습니다.</p></div><label class="check"><input type="checkbox" id="privacyConsent" required><span>개인정보 수집·이용 내용을 확인했으며 이에 동의합니다. <span class="req">*</span></span></label></div>
 <button class="btn primary submit" type="submit">참여 신청 제출하기</button><div class="success" id="successMsg" role="status">참여 신청이 접수되었습니다. 연구진이 신청 내용을 확인한 후 안내드리겠습니다.</div><div class="success" id="errorMsg" role="alert" style="background:#fdeaea;color:#8a2b2b"></div></form></div></div></section><section class="section" id="inquiry"><div class="wrap"><div class="kicker">INQUIRY</div><h2>문의하기</h2><p class="sub">연구 참여와 관련해 궁금한 점을 남겨 주세요. 확인 후 남겨 주신 연락처로 안내드립니다.</p>
@@ -143,6 +143,23 @@ label.radio input[type=radio]:focus-visible{outline:3px solid #2788a055;outline-
   const mrClear = $("mrClear");
   function syncMr() { mrClear.hidden = !mrRadios.some((r) => r.checked); }
   mrRadios.forEach((r) => r.addEventListener("change", syncMr));
+  const OFFICES = {
+    "서울3": ["남부1", "남부2", "남부3", "동부1", "동부2", "북부1", "북부2", "북부3", "서부1", "서부2", "중부"],
+    "서울4": ["강원사무소", "경기1", "경기2", "경기3", "경인1", "경인2", "경인3", "경인4"],
+    "지방3": ["경남1", "경남2", "대구1", "대구2", "대구3", "부산1", "부산2", "부산3", "울산"],
+    "지방4": ["광주1", "광주2", "대전1", "대전2", "전주1", "전주2", "청주1", "청주2"],
+  };
+  const mrDiv = $("mrDivision"), mrOff = $("mrOffice");
+  function syncOffice() {
+    const list = OFFICES[mrDiv.value] || [];
+    mrOff.innerHTML = "";
+    const first = document.createElement("option");
+    first.value = ""; first.textContent = "사무소 선택";
+    mrOff.appendChild(first);
+    list.forEach((n) => { const o = document.createElement("option"); o.value = n; o.textContent = n; mrOff.appendChild(o); });
+    mrOff.disabled = list.length === 0;
+  }
+  mrDiv.addEventListener("change", syncOffice);
   mrClear.addEventListener("click", () => { mrRadios.forEach((r) => { r.checked = false; }); syncMr(); });
 
   /* ── 서버 응답 해석 ──
@@ -253,7 +270,7 @@ label.radio input[type=radio]:focus-visible{outline:3px solid #2788a055;outline-
     successText: MSG_SUCCESS,
     duplicateText: MSG_DUPLICATE,
     validate: validateBirth,
-    afterReset: () => { syncMr(); rebuildBirth(true); },
+    afterReset: () => { syncMr(); syncOffice(); rebuildBirth(true); },
     build: () => ({
       type: "application",
       institution: $("institution").value.trim(),
